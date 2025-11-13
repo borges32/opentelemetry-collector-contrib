@@ -1208,6 +1208,7 @@ func (s *Supervisor) composeOpAMPExtensionConfig() []byte {
 		"SupervisorPort":             s.opampServerPort,
 		"PID":                        s.pidProvider.PID(),
 		"PPIDPollInterval":           orphanPollInterval,
+		"ReportsHealth":              s.config.Capabilities.ReportsHealth,
 		"ReportsAvailableComponents": s.config.Capabilities.ReportsAvailableComponents,
 	}
 	err := s.opampextensionTemplate.Execute(
@@ -1530,7 +1531,8 @@ func (s *Supervisor) runAgentProcess() {
 		select {
 		case <-s.hasNewConfig:
 			s.lastHealthFromClient.Store(nil)
-			s.telemetrySettings.Logger.Debug("agent has new config", zap.String("previous_health", s.lastHealthFromClient.Load().String()))
+			s.telemetrySettings.Logger.Debug("agent has new config, waiting for health report",
+				zap.Duration("timeout", s.config.Agent.ConfigApplyTimeout))
 			if !configApplyTimeoutTimer.Stop() {
 				select {
 				case <-configApplyTimeoutTimer.C: // Try to drain the channel
@@ -1616,8 +1618,21 @@ func (s *Supervisor) runAgentProcess() {
 
 		case <-configApplyTimeoutTimer.C:
 			lastHealth := s.lastHealthFromClient.Load()
+			s.telemetrySettings.Logger.Debug("Config apply timeout reached",
+				zap.Bool("process_running", s.commander.IsRunning()),
+				zap.String("last_health", func() string {
+					if lastHealth == nil {
+						return "nil"
+					}
+					return lastHealth.String()
+				}()),
+			)
 			if lastHealth == nil || !lastHealth.Healthy {
-				s.saveAndReportConfigStatus(protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED, "Config apply timeout exceeded")
+				errMsg := "Config apply timeout exceeded"
+				if s.commander.IsRunning() {
+					errMsg = "Config apply timeout exceeded, but process is still running. Check if OpAMP extension is configured with reports_health: true"
+				}
+				s.saveAndReportConfigStatus(protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED, errMsg)
 			} else {
 				s.saveAndReportConfigStatus(protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED, "")
 			}

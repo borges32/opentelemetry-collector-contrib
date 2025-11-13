@@ -376,7 +376,7 @@ func DefaultSupervisor() Supervisor {
 		},
 		Agent: Agent{
 			OrphanDetectionInterval: 5 * time.Second,
-			ConfigApplyTimeout:      5 * time.Second,
+			ConfigApplyTimeout:      30 * time.Second,
 			BootstrapTimeout:        3 * time.Second,
 			PassthroughLogs:         false,
 		},

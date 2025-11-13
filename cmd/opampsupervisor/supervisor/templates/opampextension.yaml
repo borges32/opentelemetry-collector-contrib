@@ -9,6 +9,7 @@ extensions:
     ppid: {{.PID}}
     ppid_poll_interval: {{.PPIDPollInterval}}
     capabilities:
+      reports_health: {{.ReportsHealth}}
       reports_available_components: {{.ReportsAvailableComponents}}
 
 service:
