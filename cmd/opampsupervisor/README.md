@@ -111,6 +111,31 @@ By default, the supervisor will use `/var/lib/otelcol/supervisor` on posix syste
 
 This directory will be created on supervisor startup if it does not exist.
 
+### Remote Configuration Persistence
+
+When the Supervisor receives configuration from an OpAMP server, it can optionally persist a human-readable copy to disk. This is useful for:
+- Auditing configuration changes over time
+- Debugging configuration issues
+- Maintaining a readable backup of the remote configuration
+- Recovery scenarios
+
+To enable this feature, configure the `persist_remote_config_path` in the agent section:
+
+```yaml
+agent:
+  executable: /path/to/collector
+  persist_remote_config_path: /var/lib/otelcol/remote_config.yaml
+```
+
+When configured, every time the Supervisor receives a new configuration from the OpAMP server, it will:
+1. Merge all configuration files from the OpAMP server
+2. Save the merged configuration as a YAML file at the specified path
+3. Log the successful persistence with the configuration hash
+
+If `persist_remote_config_path` is not specified or is empty, this feature is disabled and the remote configuration will only be saved internally for operational purposes.
+
+See the [example configuration](./examples/supervisor_with_persist_config.yaml) for a complete example.
+
 ## Healthcheck
 
 The Supervisor can be configured to expose a healthcheck endpoint that can be used to determine whether the Supervisor is running and healthy. This can be configured in the Supervisor configuration file:

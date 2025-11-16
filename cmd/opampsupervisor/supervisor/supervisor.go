@@ -1860,6 +1860,84 @@ func (s *Supervisor) saveLastReceivedConfig(config *protobufs.AgentRemoteConfig)
 	return os.WriteFile(filepath.Join(s.config.Storage.Directory, lastRecvRemoteConfigFile), cfg, 0o600)
 }
 
+// persistRemoteConfigToDisk saves the remote config to the file specified in the supervisor configuration
+// if the persist_remote_config_path is configured. This allows users to keep a readable copy of the
+// configuration received from the OpAMP server.
+func (s *Supervisor) persistRemoteConfigToDisk(config *protobufs.AgentRemoteConfig) error {
+	// Check if the feature is enabled
+	if s.config.Agent.PersistRemoteConfigPath == "" {
+		return nil
+	}
+
+	// Extract the config map from the remote config
+	configMap := config.GetConfig().GetConfigMap()
+	if len(configMap) == 0 {
+		s.telemetrySettings.Logger.Debug("Remote config is empty, nothing to persist")
+		return nil
+	}
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(s.config.Agent.PersistRemoteConfigPath)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("failed to create directory for persisting remote config: %w", err)
+	}
+
+	// Merge all configs from the config map into a single YAML
+	conf := koanf.New("::")
+
+	// Sort keys to ensure consistent ordering
+	var names []string
+	for name := range configMap {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	// Merge all configs
+	for _, name := range names {
+		cfg := configMap[name]
+		body := cfg.GetBody()
+		if body == nil {
+			continue
+		}
+
+		err := conf.Load(rawbytes.Provider(body), yaml.Parser(), koanf.WithMergeFunc(configMergeFunc))
+		if err != nil {
+			s.telemetrySettings.Logger.Error("Could not merge remote config", zap.String("configName", name), zap.Error(err))
+			return fmt.Errorf("failed to merge remote config %s: %w", name, err)
+		}
+	}
+
+	// Marshal the merged config back to YAML
+	mergedConfig, err := conf.Marshal(yaml.Parser())
+	if err != nil {
+		return fmt.Errorf("failed to marshal merged remote config: %w", err)
+	}
+
+	// Validate that the merged config is not empty or just '{}'
+	if len(mergedConfig) == 0 {
+		s.telemetrySettings.Logger.Debug("Merged config is empty, skipping persistence")
+		return nil
+	}
+
+	// Trim whitespace and check if it's just an empty object
+	trimmedConfig := strings.TrimSpace(string(mergedConfig))
+	if trimmedConfig == "{}" || trimmedConfig == "" {
+		s.telemetrySettings.Logger.Debug("Merged config is empty or contains only '{}', skipping persistence")
+		return nil
+	}
+
+	// Write the merged config to the specified file
+	if err := os.WriteFile(s.config.Agent.PersistRemoteConfigPath, mergedConfig, 0o600); err != nil {
+		return fmt.Errorf("failed to write remote config to %s: %w", s.config.Agent.PersistRemoteConfigPath, err)
+	}
+
+	s.telemetrySettings.Logger.Info("Remote config persisted to disk",
+		zap.String("path", s.config.Agent.PersistRemoteConfigPath),
+		zap.String("hash", fmt.Sprintf("%x", config.ConfigHash)))
+
+	return nil
+}
+
 func (s *Supervisor) saveLastReceivedOwnTelemetrySettings(set *protobufs.ConnectionSettingsOffers, filePath string) error {
 	cfg, err := proto.Marshal(set)
 	if err != nil {
@@ -1984,6 +2062,11 @@ func (s *Supervisor) processRemoteConfigMessage(ctx context.Context, msg *protob
 	if err := s.saveLastReceivedConfig(msg); err != nil {
 		span.SetStatus(codes.Error, fmt.Sprintf("Could not save last received remote config: %s", err.Error()))
 		s.telemetrySettings.Logger.Error("Could not save last received remote config", zap.Error(err))
+	}
+
+	// Persist remote config to disk if configured
+	if err := s.persistRemoteConfigToDisk(msg); err != nil {
+		s.telemetrySettings.Logger.Error("Could not persist remote config to disk", zap.Error(err))
 	}
 
 	s.remoteConfig = msg

@@ -2219,3 +2219,136 @@ func TestSupervisor_HealthCheckServer(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func Test_persistRemoteConfigToDisk(t *testing.T) {
+	fileLogConfig := `
+receivers:
+  filelog:
+    include: ['/test/logs/input.log']
+    start_at: "beginning"
+
+exporters:
+  file:
+    path: '/test/logs/output.log'
+
+service:
+  pipelines:
+    logs:
+      receivers: [filelog]
+      exporters: [file]`
+
+	tests := []struct {
+		name                    string
+		persistRemoteConfigPath string
+		remoteConfig            *protobufs.AgentRemoteConfig
+		expectFileCreated       bool
+		expectError             bool
+	}{
+		{
+			name:                    "feature disabled - empty path",
+			persistRemoteConfigPath: "",
+			remoteConfig: &protobufs.AgentRemoteConfig{
+				Config: &protobufs.AgentConfigMap{
+					ConfigMap: map[string]*protobufs.AgentConfigFile{
+						"": {Body: []byte(fileLogConfig)},
+					},
+				},
+				ConfigHash: []byte("test-hash"),
+			},
+			expectFileCreated: false,
+			expectError:       false,
+		},
+		{
+			name:                    "feature enabled - config persisted",
+			persistRemoteConfigPath: "remote_config.yaml",
+			remoteConfig: &protobufs.AgentRemoteConfig{
+				Config: &protobufs.AgentConfigMap{
+					ConfigMap: map[string]*protobufs.AgentConfigFile{
+						"": {Body: []byte(fileLogConfig)},
+					},
+				},
+				ConfigHash: []byte("test-hash"),
+			},
+			expectFileCreated: true,
+			expectError:       false,
+		},
+		{
+			name:                    "feature enabled - empty config",
+			persistRemoteConfigPath: "remote_config.yaml",
+			remoteConfig: &protobufs.AgentRemoteConfig{
+				Config: &protobufs.AgentConfigMap{
+					ConfigMap: map[string]*protobufs.AgentConfigFile{},
+				},
+				ConfigHash: []byte("empty-hash"),
+			},
+			expectFileCreated: false,
+			expectError:       false,
+		},
+		{
+			name:                    "feature enabled - multiple configs merged",
+			persistRemoteConfigPath: "remote_config.yaml",
+			remoteConfig: &protobufs.AgentRemoteConfig{
+				Config: &protobufs.AgentConfigMap{
+					ConfigMap: map[string]*protobufs.AgentConfigFile{
+						"receivers.yaml": {Body: []byte("receivers:\n  otlp:\n    protocols:\n      grpc:\n        endpoint: localhost:4317")},
+						"exporters.yaml": {Body: []byte("exporters:\n  logging:\n    verbosity: detailed")},
+					},
+				},
+				ConfigHash: []byte("merged-hash"),
+			},
+			expectFileCreated: true,
+			expectError:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+
+			persistPath := ""
+			if tt.persistRemoteConfigPath != "" {
+				persistPath = filepath.Join(tmpDir, tt.persistRemoteConfigPath)
+			}
+
+			s := Supervisor{
+				telemetrySettings: newNopTelemetrySettings(),
+				config: config.Supervisor{
+					Agent: config.Agent{
+						PersistRemoteConfigPath: persistPath,
+					},
+				},
+			}
+
+			err := s.persistRemoteConfigToDisk(tt.remoteConfig)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+
+			if tt.expectFileCreated {
+				// Verify file was created
+				_, err := os.Stat(persistPath)
+				require.NoError(t, err, "Expected file to be created at %s", persistPath)
+
+				// Verify file content is valid YAML
+				content, err := os.ReadFile(persistPath)
+				require.NoError(t, err)
+				require.NotEmpty(t, content)
+
+				// Verify it can be parsed as YAML
+				k := koanf.New("::")
+				err = k.Load(rawbytes.Provider(content), yaml.Parser())
+				require.NoError(t, err, "Persisted file should contain valid YAML")
+			} else {
+				// Verify file was NOT created
+				if persistPath != "" {
+					_, err := os.Stat(persistPath)
+					require.True(t, os.IsNotExist(err), "File should not have been created")
+				}
+			}
+		})
+	}
+}

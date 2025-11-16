@@ -1,0 +1,38 @@
+# Example configuration for OpAMP Supervisor with remote config persistence enabled
+# This configuration demonstrates how to use the persist_remote_config_path feature
+# to save the configuration received from the OpAMP server to a local file.
+
+server:
+  endpoint: wss://127.0.0.1:4320/v1/opamp
+  tls:
+    # Disable verification to test locally.
+    # Don't do this in production.
+    insecure_skip_verify: true
+
+capabilities:
+  reports_effective_config: true
+  reports_own_metrics: true
+  reports_own_logs: true
+  reports_own_traces: true
+  reports_health: true
+  accepts_remote_config: true
+  reports_remote_config: true
+
+agent:
+  executable: /usr/local/bin/otelcontribcol
+  
+  # persist_remote_config_path: Path where the remote configuration received from
+  # the OpAMP server will be persisted. When configured, every time the supervisor
+  # receives a new configuration from OpAMP, it will save a readable YAML version
+  # to this file. This is useful for:
+  # - Auditing configuration changes
+  # - Debugging configuration issues
+  # - Maintaining a human-readable copy of the remote config
+  # - Backup and recovery
+  #
+  # If this field is empty or not specified, the remote config will not be persisted
+  # to a separate file (though it will still be saved internally for operation).
+  persist_remote_config_path: /var/lib/otelcol/remote_config.yaml
+
+storage:
+  directory: /var/lib/otelcol/supervisor

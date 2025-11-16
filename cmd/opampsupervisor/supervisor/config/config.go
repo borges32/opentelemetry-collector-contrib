@@ -223,6 +223,9 @@ type Agent struct {
 	ConfigFiles             []string          `mapstructure:"config_files"`
 	Arguments               []string          `mapstructure:"args"`
 	Env                     map[string]string `mapstructure:"env"`
+	// PersistRemoteConfigPath is the file path where the remote config from OpAMP should be persisted.
+	// If empty, the remote config will not be persisted to a separate file.
+	PersistRemoteConfigPath string `mapstructure:"persist_remote_config_path"`
 }
 
 func (a Agent) Validate() error {
