@@ -1637,8 +1637,10 @@ service:
 func TestSupervisor_createEffectiveConfigMsg(t *testing.T) {
 	t.Run("empty config", func(t *testing.T) {
 		s := Supervisor{
+			config:            config.Supervisor{},
 			effectiveConfig:   &atomic.Value{},
 			cfgState:          &atomic.Value{},
+			unmergedConfig:    &atomic.Value{},
 			telemetrySettings: newNopTelemetrySettings(),
 		}
 		got := s.createEffectiveConfigMsg()
@@ -1647,8 +1649,10 @@ func TestSupervisor_createEffectiveConfigMsg(t *testing.T) {
 	})
 	t.Run("effective and merged config set - prefer effective config", func(t *testing.T) {
 		s := Supervisor{
+			config:            config.Supervisor{},
 			effectiveConfig:   &atomic.Value{},
 			cfgState:          &atomic.Value{},
+			unmergedConfig:    &atomic.Value{},
 			telemetrySettings: newNopTelemetrySettings(),
 		}
 
@@ -1661,8 +1665,10 @@ func TestSupervisor_createEffectiveConfigMsg(t *testing.T) {
 	})
 	t.Run("only merged config set", func(t *testing.T) {
 		s := Supervisor{
+			config:            config.Supervisor{},
 			effectiveConfig:   &atomic.Value{},
 			cfgState:          &atomic.Value{},
+			unmergedConfig:    &atomic.Value{},
 			telemetrySettings: newNopTelemetrySettings(),
 		}
 
@@ -1671,6 +1677,47 @@ func TestSupervisor_createEffectiveConfigMsg(t *testing.T) {
 		got := s.createEffectiveConfigMsg()
 
 		assert.Equal(t, []byte("merged"), got.ConfigMap.ConfigMap[""].Body)
+	})
+	t.Run("unmerged config when capability enabled", func(t *testing.T) {
+		s := Supervisor{
+			config: config.Supervisor{
+				Capabilities: config.Capabilities{
+					ReportsUnmergedEffectiveConfig: true,
+				},
+			},
+			effectiveConfig:   &atomic.Value{},
+			cfgState:          &atomic.Value{},
+			unmergedConfig:    &atomic.Value{},
+			telemetrySettings: newNopTelemetrySettings(),
+		}
+
+		s.effectiveConfig.Store("effective")
+		s.cfgState.Store(&configState{mergedConfig: "merged"})
+		s.unmergedConfig.Store("unmerged")
+
+		got := s.createEffectiveConfigMsg()
+
+		assert.Equal(t, []byte("unmerged"), got.ConfigMap.ConfigMap[""].Body)
+	})
+	t.Run("unmerged config capability enabled but unmerged not available - fallback to merged", func(t *testing.T) {
+		s := Supervisor{
+			config: config.Supervisor{
+				Capabilities: config.Capabilities{
+					ReportsUnmergedEffectiveConfig: true,
+				},
+			},
+			effectiveConfig:   &atomic.Value{},
+			cfgState:          &atomic.Value{},
+			unmergedConfig:    &atomic.Value{},
+			telemetrySettings: newNopTelemetrySettings(),
+		}
+
+		s.effectiveConfig.Store("effective")
+		s.cfgState.Store(&configState{mergedConfig: "merged"})
+
+		got := s.createEffectiveConfigMsg()
+
+		assert.Equal(t, []byte("effective"), got.ConfigMap.ConfigMap[""].Body)
 	})
 }
 

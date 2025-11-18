@@ -1,0 +1,49 @@
+# Example configuration for OpAMP Supervisor with unmerged effective config reporting
+# This configuration demonstrates how to use the reports_unmerged_effective_config capability
+# to report the original configuration without supervisor-injected modifications.
+
+server:
+  endpoint: wss://127.0.0.1:4320/v1/opamp
+  tls:
+    # Disable verification to test locally.
+    # Don't do this in production.
+    insecure_skip_verify: true
+
+capabilities:
+  reports_effective_config: true
+  reports_own_metrics: true
+  reports_own_logs: true
+  reports_own_traces: true
+  reports_health: true
+  accepts_remote_config: true
+  reports_remote_config: true
+  
+  # reports_unmerged_effective_config: When enabled, the effective configuration
+  # reported to the OpAMP server will be the original configuration without
+  # supervisor-injected configurations such as:
+  # - OpAMP extension configuration
+  # - Own telemetry configuration  
+  # - Extra telemetry settings
+  #
+  # This is useful when:
+  # - You want to see what configuration the OpAMP server sent, not what's actually running
+  # - You need to audit or debug the configuration without supervisor modifications
+  # - You want to use persist_remote_config_path to replace the unmerged config
+  #
+  # When this is disabled (default), the effective config includes all supervisor-injected
+  # configurations, showing exactly what the collector is running with.
+  reports_unmerged_effective_config: true
+
+agent:
+  executable: /usr/local/bin/otelcontribcol
+  
+  # persist_remote_config_path: When combined with reports_unmerged_effective_config,
+  # the configuration persisted here will also replace the unmerged config that gets
+  # reported to OpAMP. This allows the OpAMP server to send a new configuration that
+  # will be both:
+  # 1. Persisted to this file for reference
+  # 2. Reported back to OpAMP as the effective config (without supervisor modifications)
+  persist_remote_config_path: /var/lib/otelcol/remote_config.yaml
+
+storage:
+  directory: /var/lib/otelcol/supervisor

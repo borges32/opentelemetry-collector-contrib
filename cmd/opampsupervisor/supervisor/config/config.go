@@ -115,6 +115,9 @@ type Capabilities struct {
 	ReportsRemoteConfig            bool `mapstructure:"reports_remote_config"`
 	ReportsAvailableComponents     bool `mapstructure:"reports_available_components"`
 	ReportsHeartbeat               bool `mapstructure:"reports_heartbeat"`
+	// ReportsUnmergedEffectiveConfig when enabled, the effective config reported to OpAMP
+	// will be the original config without supervisor-injected configurations
+	ReportsUnmergedEffectiveConfig bool `mapstructure:"reports_unmerged_effective_config"`
 }
 
 func (c Capabilities) SupportedCapabilities() protobufs.AgentCapabilities {

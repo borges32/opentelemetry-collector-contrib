@@ -145,6 +145,9 @@ type Supervisor struct {
 	// Final effective config of the Collector.
 	effectiveConfig *atomic.Value
 
+	// Unmerged config without supervisor-injected configurations
+	unmergedConfig *atomic.Value
+
 	// Last received remote config.
 	remoteConfig *protobufs.AgentRemoteConfig
 
@@ -199,6 +202,7 @@ func NewSupervisor(ctx context.Context, logger *zap.Logger, cfg config.Superviso
 		agentConfigOwnTelemetrySection: &atomic.Value{},
 		cfgState:                       &atomic.Value{},
 		effectiveConfig:                &atomic.Value{},
+		unmergedConfig:                 &atomic.Value{},
 		agentDescription:               &atomic.Value{},
 		availableComponents:            &atomic.Value{},
 		doneChan:                       make(chan struct{}),
@@ -1225,6 +1229,57 @@ func (s *Supervisor) composeOpAMPExtensionConfig() []byte {
 
 type configComposer func() []byte
 
+// composeUnmergedConfigFiles composes config files WITHOUT supervisor-injected special configs
+// This is used when reports_unmerged_effective_config is enabled
+func (s *Supervisor) composeUnmergedConfigFiles(incomingConfig *protobufs.AgentRemoteConfig) ([]byte, error) {
+	conf := koanf.New("::")
+
+	// Only process remote config, not supervisor-specific special configs
+	specialConfigComposers := map[config.SpecialConfigFile][]configComposer{
+		config.SpecialConfigFileRemoteConfig: s.createRemoteConfigComposers(incomingConfig),
+	}
+
+	for _, file := range s.config.Agent.ConfigFiles {
+		if strings.HasPrefix(file, "$") {
+			// Skip supervisor-injected special configs
+			if file == string(config.SpecialConfigFileOwnTelemetry) || file == string(config.SpecialConfigFileOpAMPExtension) {
+				continue
+			}
+
+			cfgProviders := specialConfigComposers[config.SpecialConfigFile(file)]
+			for _, cfgProvider := range cfgProviders {
+				cfgBytes := cfgProvider()
+				err := conf.Load(rawbytes.Provider(cfgBytes), yaml.Parser(), koanf.WithMergeFunc(configMergeFunc))
+				if err != nil {
+					s.telemetrySettings.Logger.Error("Could not merge special config file", zap.String("specialConfig", file), zap.Error(err))
+					return nil, err
+				}
+			}
+			continue
+		}
+
+		// Process normal config files
+		cfgBytes, err := os.ReadFile(file)
+		if err != nil {
+			s.telemetrySettings.Logger.Error("Could not read local config file", zap.Error(err))
+			continue
+		}
+
+		err = conf.Load(rawbytes.Provider(cfgBytes), yaml.Parser(), koanf.WithMergeFunc(configMergeFunc))
+		if err != nil {
+			s.telemetrySettings.Logger.Error("Could not merge local config file: "+file, zap.Error(err))
+			continue
+		}
+	}
+
+	b, err := conf.Marshal(yaml.Parser())
+	if err != nil {
+		s.telemetrySettings.Logger.Error("Could not marshal unmerged config files", zap.Error(err))
+		return []byte(""), err
+	}
+	return b, nil
+}
+
 func (s *Supervisor) composeAgentConfigFiles(incomingConfig *protobufs.AgentRemoteConfig) ([]byte, error) {
 	conf := koanf.New("::")
 
@@ -1354,14 +1409,20 @@ func (s *Supervisor) loadLastReceivedOwnTelemetryConfig() {
 // createEffectiveConfigMsg create an EffectiveConfig with the content of the
 // current effective config.
 func (s *Supervisor) createEffectiveConfigMsg() *protobufs.EffectiveConfig {
-	cfgStr, ok := s.effectiveConfig.Load().(string)
-	if !ok {
-		cfgState, ok := s.cfgState.Load().(*configState)
-		if !ok {
-			cfgStr = ""
+	var cfgStr string
+
+	// If ReportsUnmergedEffectiveConfig is enabled, use the unmerged config
+	if s.config.Capabilities.ReportsUnmergedEffectiveConfig {
+		unmergedCfg, ok := s.unmergedConfig.Load().(string)
+		if ok && unmergedCfg != "" {
+			cfgStr = unmergedCfg
 		} else {
-			cfgStr = cfgState.mergedConfig
+			// Fallback to merged config if unmerged is not available
+			s.telemetrySettings.Logger.Debug("Unmerged config not available, falling back to merged config")
+			cfgStr = s.getEffectiveConfigFallback()
 		}
+	} else {
+		cfgStr = s.getEffectiveConfigFallback()
 	}
 
 	cfg := &protobufs.EffectiveConfig{
@@ -1373,6 +1434,20 @@ func (s *Supervisor) createEffectiveConfigMsg() *protobufs.EffectiveConfig {
 	}
 
 	return cfg
+}
+
+// getEffectiveConfigFallback returns the effective config using the original logic
+func (s *Supervisor) getEffectiveConfigFallback() string {
+	cfgStr, ok := s.effectiveConfig.Load().(string)
+	if !ok {
+		cfgState, ok := s.cfgState.Load().(*configState)
+		if !ok {
+			cfgStr = ""
+		} else {
+			cfgStr = cfgState.mergedConfig
+		}
+	}
+	return cfgStr
 }
 
 func (*Supervisor) updateOwnTelemetryData(data map[string]any, signal string, settings *protobufs.TelemetryConnectionSettings) map[string]any {
@@ -1439,6 +1514,17 @@ func (s *Supervisor) composeMergedConfig(incomingConfig *protobufs.AgentRemoteCo
 		}
 	}
 
+	// If reports_unmerged_effective_config is enabled, compose config WITHOUT supervisor-injected files
+	if s.config.Capabilities.ReportsUnmergedEffectiveConfig {
+		unmergedConfigBytes, err := s.composeUnmergedConfigFiles(incomingConfig)
+		if err != nil {
+			s.telemetrySettings.Logger.Error("Could not compose unmerged config", zap.Error(err))
+		} else {
+			s.unmergedConfig.Store(string(unmergedConfigBytes))
+			s.telemetrySettings.Logger.Debug("Stored unmerged config (without supervisor injections) for OpAMP reporting")
+		}
+	}
+
 	agentConfigBytes, err := s.composeAgentConfigFiles(incomingConfig)
 	if err != nil {
 		return false, err
@@ -1454,6 +1540,8 @@ func (s *Supervisor) composeMergedConfig(incomingConfig *protobufs.AgentRemoteCo
 	if err != nil {
 		return false, err
 	}
+
+	s.telemetrySettings.Logger.Debug("Composed merged config (with supervisor injections) for collector execution")
 
 	// Check if supervisor's merged config is changed.
 
@@ -1929,6 +2017,13 @@ func (s *Supervisor) persistRemoteConfigToDisk(config *protobufs.AgentRemoteConf
 	// Write the merged config to the specified file
 	if err := os.WriteFile(s.config.Agent.PersistRemoteConfigPath, mergedConfig, 0o600); err != nil {
 		return fmt.Errorf("failed to write remote config to %s: %w", s.config.Agent.PersistRemoteConfigPath, err)
+	}
+
+	// If ReportsUnmergedEffectiveConfig is enabled, update the unmerged config
+	// with the persisted remote config (without supervisor-injected configurations)
+	if s.config.Capabilities.ReportsUnmergedEffectiveConfig {
+		s.unmergedConfig.Store(string(mergedConfig))
+		s.telemetrySettings.Logger.Debug("Updated unmerged config with persisted remote config")
 	}
 
 	s.telemetrySettings.Logger.Info("Remote config persisted to disk",
