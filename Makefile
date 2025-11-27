@@ -456,7 +456,7 @@ telemetrygenlite:
 .PHONY: opampsupervisor
 opampsupervisor:
 	cd ./cmd/opampsupervisor && GO111MODULE=on CGO_ENABLED=0 $(GOCMD) build -trimpath -o ../../bin/opampsupervisor_$(GOOS)_$(GOARCH)$(EXTENSION) \
-		-tags $(GO_BUILD_TAGS) .
+		-ldflags='-extldflags=-static -s -w' -tags $(GO_BUILD_TAGS),netgo,osusergo .
 
 # Build the golden executable.
 .PHONY: golden
