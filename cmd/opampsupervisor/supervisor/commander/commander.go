@@ -71,7 +71,7 @@ func (c *Commander) Start(ctx context.Context) error {
 		default:
 		}
 	}
-	c.logger.Debug("Starting agent", zap.String("agent", c.cfg.Executable))
+	// c.logger.Debug("Starting agent", zap.String("agent", c.cfg.Executable))
 
 	args := slices.Concat(c.args, c.cfg.Arguments)
 
@@ -87,7 +87,7 @@ func (c *Commander) Start(ctx context.Context) error {
 }
 
 func (c *Commander) Restart(ctx context.Context) error {
-	c.logger.Debug("Restarting agent", zap.String("agent", c.cfg.Executable))
+	// c.logger.Debug("Restarting agent", zap.String("agent", c.cfg.Executable))
 	if err := c.Stop(ctx); err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func (c *Commander) ReloadConfigFile() error {
 		return errors.New("agent process is not running")
 	}
 
-	c.logger.Debug("Sending SIGHUP to agent process to reload config", zap.Int("pid", c.cmd.Process.Pid))
+	// c.logger.Debug("Sending SIGHUP to agent process to reload config", zap.Int("pid", c.cmd.Process.Pid))
 	if err := c.cmd.Process.Signal(syscall.SIGHUP); err != nil {
 		return fmt.Errorf("failed to send SIGHUP to agent process: %w", err)
 	}
@@ -125,7 +125,7 @@ func (c *Commander) startNormal() error {
 		return fmt.Errorf("startNormal: %w", err)
 	}
 
-	c.logger.Debug("Agent process started", zap.Int("pid", c.cmd.Process.Pid))
+	// c.logger.Debug("Agent process started", zap.Int("pid", c.cmd.Process.Pid))
 	c.running.Store(1)
 
 	go func() {
@@ -177,7 +177,7 @@ func (c *Commander) startWithPassthroughLogging() error {
 		}
 	}()
 
-	c.logger.Debug("Agent process started", zap.Int("pid", c.cmd.Process.Pid))
+	// c.logger.Debug("Agent process started", zap.Int("pid", c.cmd.Process.Pid))
 
 	go c.watch()
 	return nil
@@ -246,7 +246,7 @@ func (c *Commander) StartOneShot() ([]byte, []byte, error) {
 		}
 	}()
 
-	c.logger.Debug("Agent process started", zap.Int("pid", cmd.Process.Pid))
+	// c.logger.Debug("Agent process started", zap.Int("pid", cmd.Process.Pid))
 
 	doneCh := make(chan struct{}, 1)
 
@@ -265,8 +265,8 @@ func (c *Commander) StartOneShot() ([]byte, []byte, error) {
 	select {
 	case <-doneCh:
 	case <-waitCtx.Done():
-		pid := cmd.Process.Pid
-		c.logger.Debug("Stopping agent process", zap.Int("pid", pid))
+		// pid := cmd.Process.Pid
+		// c.logger.Debug("Stopping agent process", zap.Int("pid", pid))
 
 		// Gracefully signal process to stop.
 		if err := sendShutdownSignal(cmd.Process); err != nil {
@@ -282,14 +282,14 @@ func (c *Commander) StartOneShot() ([]byte, []byte, error) {
 			<-innerWaitCtx.Done()
 
 			if !errors.Is(innerWaitCtx.Err(), context.DeadlineExceeded) {
-				c.logger.Debug("Agent process successfully stopped.", zap.Int("pid", pid))
+				// c.logger.Debug("Agent process successfully stopped.", zap.Int("pid", pid))
 				return
 			}
 
 			// Time is out. Kill the process.
-			c.logger.Debug(
-				"Agent process is not responding to SIGTERM. Sending SIGKILL to kill forcibly.",
-				zap.Int("pid", pid))
+			// c.logger.Debug(
+			// 	"Agent process is not responding to SIGTERM. Sending SIGKILL to kill forcibly.",
+			// 	zap.Int("pid", pid))
 			if innerErr = cmd.Process.Signal(os.Kill); innerErr != nil {
 				return
 			}
@@ -335,8 +335,8 @@ func (c *Commander) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	pid := c.cmd.Process.Pid
-	c.logger.Debug("sending shutdown signal to agent process", zap.Int("pid", pid))
+	// pid := c.cmd.Process.Pid
+	// c.logger.Debug("sending shutdown signal to agent process", zap.Int("pid", pid))
 
 	// Gracefully signal process to stop.
 	if err := sendShutdownSignal(c.cmd.Process); err != nil {
@@ -352,14 +352,14 @@ func (c *Commander) Stop(ctx context.Context) error {
 		<-waitCtx.Done()
 
 		if !errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
-			c.logger.Debug("Agent process successfully stopped.", zap.Int("pid", pid))
+			// c.logger.Debug("Agent process successfully stopped.", zap.Int("pid", pid))
 			return
 		}
 
 		// Time is out. Kill the process.
-		c.logger.Debug(
-			"Agent process is not responding to SIGTERM. Sending SIGKILL to kill forcibly.",
-			zap.Int("pid", pid))
+		// c.logger.Debug(
+		// 	"Agent process is not responding to SIGTERM. Sending SIGKILL to kill forcibly.",
+		// 	zap.Int("pid", pid))
 		if innerErr = c.cmd.Process.Signal(os.Kill); innerErr != nil {
 			return
 		}
