@@ -20,3 +20,7 @@ agent:
 
 storage:
   directory: .
+
+telemetry:
+  metrics:
+    level: none
