@@ -532,6 +532,7 @@ func Test_onMessage(t *testing.T) {
     opamp:
         capabilities:
             reports_available_components: false
+            reports_health: false
         instance_uid: 018fee23-4a51-7303-a441-73faed7d9deb
         ppid: 88888
         ppid_poll_interval: 5s
@@ -633,6 +634,7 @@ service:
     opamp:
         capabilities:
             reports_available_components: false
+            reports_health: false
         instance_uid: 018fee23-4a51-7303-a441-73faed7d9deb
         ppid: 88888
         ppid_poll_interval: 5s
@@ -819,6 +821,7 @@ extensions:
     opamp:
         capabilities:
             reports_available_components: false
+            reports_health: false
         instance_uid: 018fee23-4a51-7303-a441-73faed7d9deb
         ppid: 88888
         ppid_poll_interval: 5s
@@ -940,6 +943,7 @@ service:
     opamp:
         capabilities:
             reports_available_components: false
+            reports_health: false
         instance_uid: 018fee23-4a51-7303-a441-73faed7d9deb
         ppid: 88888
         ppid_poll_interval: 5s
@@ -1733,6 +1737,7 @@ func TestSupervisor_loadAndWriteInitialMergedConfig(t *testing.T) {
     opamp:
         capabilities:
             reports_available_components: false
+            reports_health: false
         instance_uid: 018fee23-4a51-7303-a441-73faed7d9deb
         ppid: 1234
         ppid_poll_interval: 5s
@@ -1867,6 +1872,7 @@ extensions:
     opamp:
         capabilities:
             reports_available_components: false
+            reports_health: false
         instance_uid: 018fee23-4a51-7303-a441-73faed7d9deb
         ppid: 1234
         ppid_poll_interval: 5s
@@ -1886,6 +1892,9 @@ service:
                 - nop
             receivers:
                 - nop
+    telemetry:
+        metrics:
+            level: none
 `
 	s := Supervisor{
 		persistentState: &persistentState{
@@ -1910,6 +1919,7 @@ extensions:
     opamp:
         capabilities:
             reports_available_components: true
+            reports_health: false
         instance_uid: 018fee23-4a51-7303-a441-73faed7d9deb
         ppid: 1234
         ppid_poll_interval: 5s
@@ -1929,6 +1939,9 @@ service:
                 - nop
             receivers:
                 - nop
+    telemetry:
+        metrics:
+            level: none
 `
 	s := Supervisor{
 		persistentState: &persistentState{

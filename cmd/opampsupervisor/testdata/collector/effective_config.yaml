@@ -7,6 +7,7 @@ extensions:
     opamp:
         capabilities:
             reports_available_components: false
+            reports_health: false
         instance_uid: 00000000-0000-0000-0000-000000000000
         ppid: 1234
         ppid_poll_interval: 5s

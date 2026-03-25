@@ -69,6 +69,9 @@ var (
 	//go:embed templates/owntelemetry.yaml
 	ownTelemetryTpl string
 
+	//go:embed templates/bootstraptelemetry.yaml
+	bootstrapTelemetryTpl string
+
 	lastRecvRemoteConfigFile       = "last_recv_remote_config.dat"
 	lastRecvOwnTelemetryConfigFile = "last_recv_own_telemetry_config.dat"
 
@@ -1160,6 +1163,11 @@ func (s *Supervisor) composeNoopConfig() ([]byte, error) {
 		return nil, err
 	}
 	if err := k.Load(rawbytes.Provider(s.composeOpAMPExtensionConfig()), yaml.Parser(), koanf.WithMergeFunc(configMergeFunc)); err != nil {
+		return nil, err
+	}
+	// Disable the Collector's default Prometheus metrics endpoint (127.0.0.1:8888)
+	// during bootstrap to avoid port conflicts with other services.
+	if err := k.Load(rawbytes.Provider([]byte(bootstrapTelemetryTpl)), yaml.Parser(), koanf.WithMergeFunc(configMergeFunc)); err != nil {
 		return nil, err
 	}
 
